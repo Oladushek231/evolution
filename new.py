@@ -1,12 +1,9 @@
 import random
 import os
 import time
-import copy
 
 # --- БАЗОВЫЕ ЗНАЧНИЕ ---
 sizeX, sizeY = (80, 40) or map(int, input("ВВедите размеры мира:").split())
-# for i in range(sizeY):
-# print(*["." for _ in range(sizeX)])
 free_place = " "
 plante = "*"
 animal = "8"
@@ -19,19 +16,30 @@ start_tree = int((sizeX * sizeY) * 0.1)
 
 class World:
     def __init__(self, x, y):
-        self.free_place = {(nx, ny) for ny in range(y) for nx in range(x)}
+        self.width = x
+        self.height = y
 
-    def occupy(self, pos):
-        self.free_place.discard(pos)
+        self.all_place = {(nx, ny): None for ny in range(y) for nx in range(x)}
+        self.all_free_pos = [pos for pos in self.all_place]
+
+    def occupy(self, pos, obj):
+        self.all_place[pos] = obj
+        self.all_free_pos.remove(pos)
 
     def rewind(self, pos):
-        self.free_place.add(pos)
+        self.all_place[pos] = None
+        self.all_free_pos.append(pos)
+
+    def get_empty_place(self):
+        if self.all_free_pos:
+            return random.choice(self.all_free_pos)
+        return None
 
     def __iter__(self):
-        return iter(list(self.free_place))
+        return iter(list(self.all_place.keys()))
 
     def __len__(self):
-        return len(self.free_place)
+        return len(self.all_place)
 
 
 class Entitiy:
@@ -40,7 +48,7 @@ class Entitiy:
         self.y = y
         mutation = random.choice([-3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 1])
         self.hp = max(mutation + gen, 1)
-        self.maximka = self.hp
+        self.max_hp_with_burn = self.hp
 
     @property
     def pos(self):
@@ -81,16 +89,10 @@ class Plante(Entitiy):
 
 # СПАВН ДЕРЕВЬЕВ
 def SpawnTrees(maxSpawnTree, world):
-    tree_spawned = set()
     for _ in range(maxSpawnTree):
-        if world.free_place:
-            treeX, treeY = random.choice(list(world.free_place))
-            tree_spawned.add(Plante(treeX, treeY))
-            world.occupy((treeX, treeY))
-
-        else:
-            break
-    return list(tree_spawned)
+        tree_pos = world.get_empty_place()
+        if tree_pos:
+            world.occupy(tree_pos, Plante(*tree_pos))
 
 
 def budding(plante, world):
@@ -116,8 +118,9 @@ def budding(plante, world):
 
 def viev_animal(animal_one):
     viev_an = []
-    for dx in range(-animal_one.hungry, animal_one.hungry + 1):
-        for dy in range(-animal_one.hungry, animal_one.hungry + 1):
+    radius = animal_one.hungry
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
             if dx == dy == 0:
                 continue
             numX = animal_one.x + dx
@@ -141,38 +144,22 @@ def working():
 def run_simulator(day):
     display_world = [[" " for _ in range(sizeX)] for _ in range(sizeY)]
     world = World(sizeX, sizeY)
-    unit = set()
-    tree = set()
+
     # СТАРТОВОЕ ЖИВОТНОЕ
-    free_place = random.sample(list(world), 1)
-    for pos in free_place:
-        posX = pos[0]
-        posY = pos[1]
-        el = Animal(*pos)
-        unit.add(el)
-        world.occupy(pos)
-        display_world[posY][posX] = animal
+    first_animal = world.get_empty_place()
+    world.occupy(first_animal, Animal(*first_animal))
 
     # СТАРТОВЫЕ ДЕРЕВЬЯ
-    free_place = random.sample(list(world), start_tree)
-    for pos in free_place:
-        posX = pos[0]
-        posY = pos[1]
-        tree.add(Plante(*pos))
-        world.occupy(pos)
-        display_world[posY][posX] = plante
+    for _ in range(start_tree):
+        firsts_tree = world.get_empty_place()
+        world.occupy(firsts_tree, Plante(*firsts_tree))
 
     maxim = 0
     const = 0
     while True:
 
         # СПАВН ДЕРЕВЬЕВ
-        dop = SpawnTrees(maxSpawnTree, world)
-        for pos in dop:
-            posX = pos.x
-            posY = pos.y
-            display_world[posY][posX] = plante
-            tree.add(pos)
+        SpawnTrees(maxSpawnTree, world)
 
         # ЖИВОТНЫЕ
         next_gen = []
@@ -185,7 +172,7 @@ def run_simulator(day):
             viev_org = viev_animal(org)
 
             action, aff_food = org.think(viev_org, display_world)
-            possible_move = {i for i in viev_org if i in world.free_place}
+            possible_move = {i for i in viev_org if i in world.all_place}
             if action == "ЕДА":
                 how_many_eat = min(len(aff_food), org.hungry)
                 really_eat = random.sample(aff_food, how_many_eat)
@@ -207,7 +194,9 @@ def run_simulator(day):
                 for possibl in where_born:
                     el = Animal(*possibl, gen)
                     next_gen.append(el)
-                    maxim = el.maximka if el.maximka > maxim else maxim
+                    maxim = (
+                        el.max_hp_with_burn if el.max_hp_with_burn > maxim else maxim
+                    )
                     world.occupy(possibl)
                     possible_move.discard(possibl)
                     display_world[possibl[1]][possibl[0]] = animal
