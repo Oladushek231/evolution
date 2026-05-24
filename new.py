@@ -73,7 +73,7 @@ class Animal(Entitiy):
     def __init__(self, x, y, gen=max_hp_animal):
         super().__init__(x, y, gen)
         self.hungry = 1
-        self.look = "8"
+        self.look = " "
         if self.hp >= max_hp_animal * 2:
             self.hungry += int((self.hp // max_hp_animal - 1) ** 1.42)
 
@@ -84,14 +84,16 @@ class Animal(Entitiy):
             coor = world.all_place.get(pos)
             if isinstance(coor, Plante):
                 target.append(pos)
-            elif pos is None:
+            elif coor is None:
                 posible_move.append(pos)
 
         # ЕДА ЕСТЬ
         if target:
-            return "ЕДА", target
-        return "ДВИЖЕНИЕ", (
-            random.choice(posible_move) if posible_move else (self.x, self.y)
+            return "ЕДА", target, posible_move
+        return (
+            "ДВИЖЕНИЕ",
+            (),
+            (random.choice(posible_move) if posible_move else (self.x, self.y)),
         )
 
 
@@ -162,6 +164,48 @@ def working():
     print(f"Симуляций было {count}")
 
 
+def is_alive(entiti):
+    return entiti.hp >= 1
+
+
+def action_move(animal, world, maxim, action, target, pos_mov):
+    if action == "ЕДА":
+        # доступные кусты
+        available_plants = target
+        # сколько может съесть (добавил жадность, чтобы можно было реально много жить)
+        max_can_eat = min(len(available_plants), animal.hungry + 1)
+        # выбираем кусты
+        chosen_plants_coords = random.sample(target, max_can_eat)
+        animal.hp -= animal.hungry - len(chosen_plants_coords)
+
+        # едим
+        for pos in chosen_plants_coords:
+            world.rewind(pos)
+            pos_mov.append(pos)
+        count_child = min(len(pos_mov), random.choice([0, 0, 1, 1, 1, 2]))
+
+        gen = animal.max_hp_with_burn
+        where_born = random.sample(pos_mov, count_child)
+
+        for possibl in where_born:
+            animals = Animal(*possibl, gen)
+            world.occupy(possibl, animals)
+            maxim = max(animals.max_hp_with_burn, maxim)
+
+    elif action == "ДВИЖЕНИЕ":
+        if pos_mov:
+            # ОСВОБОЖДАЕМ СТАРОЕ МЕСТО И ИЩЕМ НОВОЕ
+            free = pos_mov
+            world.rewind(animal.pos)
+            # делаем шаг
+
+            animal.x, animal.y = free
+            world.occupy(free, animal)
+            animal.hp -= animal.hungry
+            maxim = max(animal.hp, maxim)
+    return maxim
+
+
 def run_simulator(day):
     world = World(sizeX, sizeY)
     display_world = [[" " for _ in range(world.width)] for _ in range(world.height)]
@@ -183,52 +227,15 @@ def run_simulator(day):
 
         # ЖИВОТНЫЕ
         for org in world.registry.get(Animal, set()).copy():
-            if org.hp < 1:
+            if not is_alive(org):
                 world.rewind(org.pos)
                 continue
 
             # Зрение
             viev_org = viev_animal(org, world)
             # действие
-            action, eat_or_move = org.think(viev_org, world)
-            possible_move = [i for i in viev_org if world.all_place[i] is None]
-            if action == "ЕДА":
-                # доступные кусты
-                available_plants = eat_or_move
-                # сколько может съесть (добавил жадность, чтобы можно было реально много жить)
-                max_can_eat = min(len(available_plants), org.hungry + 1)
-                # выбираем кусты
-                chosen_plants_coords = random.sample(eat_or_move, max_can_eat)
-                org.hp -= org.hungry - len(chosen_plants_coords)
 
-                # едим
-                for pos in chosen_plants_coords:
-                    world.rewind(pos)
-                    possible_move.append(pos)
-                count_child = min(len(possible_move), random.choice([0, 0, 1, 1, 1, 2]))
-
-                gen = org.max_hp_with_burn
-                where_born = random.sample(possible_move, count_child)
-
-                # Рождение
-                for possibl in where_born:
-                    animals = Animal(*possibl, gen)
-                    world.occupy(possibl, animals)
-                    maxim = max(animals.max_hp_with_burn, maxim)
-
-            elif action == "ДВИЖЕНИЕ":
-                if possible_move:
-                    # ОСВОБОЖДАЕМ СТАРОЕ МЕСТО И ИЩЕМ НОВОЕ
-                    free = random.choice(possible_move)
-                    world.rewind(org.pos)
-                    possible_move.append(org.pos)
-                    # делаем шаг
-
-                    org.x, org.y = free
-                    world.occupy(free, org)
-                    possible_move.remove(free)
-                    org.hp -= org.hungry
-                    maxim = max(org.hp, maxim)
+            maxim = action_move(org, world, maxim, *org.think(viev_org, world))
 
         # РАСТЕНИЯ
         for pl in world.registry.get(Plante, set()).copy():
