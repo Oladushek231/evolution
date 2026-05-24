@@ -7,7 +7,7 @@ sizeX, sizeY = (80, 40) or map(int, input("ВВедите размеры мир�
 free_place = " "
 plante = "*"
 animal = "8"
-maxSpawnTree = 1
+maxSpawnTree = random.randint(1, 3)
 max_hp_animal = random.randint(3, 5)
 max_hp_plante = 10
 durating = 0.02
@@ -18,17 +18,31 @@ class World:
     def __init__(self, x, y):
         self.width = x
         self.height = y
-
+        self.registry = {}
         self.all_place = {(nx, ny): None for ny in range(y) for nx in range(x)}
         self.all_free_pos = [pos for pos in self.all_place]
 
     def occupy(self, pos, obj):
+
         self.all_place[pos] = obj
         self.all_free_pos.remove(pos)
 
+        obj_type = type(obj)
+
+        if obj_type not in self.registry:
+            self.registry[obj_type] = set()
+            self.registry[obj_type].add(obj)
+        else:
+            self.registry[obj_type].add(obj)
+
     def rewind(self, pos):
-        self.all_place[pos] = None
-        self.all_free_pos.append(pos)
+        if pos != None:
+            old_obj = self.all_place[pos]
+            old_obj_type = type(old_obj)
+            self.registry[old_obj_type].discard(old_obj)
+
+            self.all_place[pos] = None
+            self.all_free_pos.append(pos)
 
     def get_empty_place(self):
         if self.all_free_pos:
@@ -59,22 +73,23 @@ class Animal(Entitiy):
     def __init__(self, x, y, gen=max_hp_animal):
         super().__init__(x, y, gen)
         self.hungry = 1
+        self.look = "8"
         if self.hp >= max_hp_animal * 2:
             self.hungry += int((self.hp // max_hp_animal - 1) ** 1.42)
 
-    def think(self, viev, display):
+    def think(self, viev, world):
         target = []
         posible_move = []
-        for x, y in viev:
-            if display[y][x] == plante:
-                target.append((x, y))
-            elif display[y][x] == " ":
-                posible_move.append((x, y))
+        for pos in viev:
+            coor = world.all_place.get(pos)
+            if isinstance(coor, Plante):
+                target.append(pos)
+            elif pos is None:
+                posible_move.append(pos)
 
         # ЕДА ЕСТЬ
         if target:
             return "ЕДА", target
-        self.hp -= self.hungry
         return "ДВИЖЕНИЕ", (
             random.choice(posible_move) if posible_move else (self.x, self.y)
         )
@@ -83,6 +98,7 @@ class Animal(Entitiy):
 class Plante(Entitiy):
     def __init__(self, x, y, gen=max_hp_plante):
         super().__init__(x, y, gen)
+        self.look = "*"
         self.repro = self.hp // random.randint(1, 3)
         self.repro_timer = 0
 
@@ -96,37 +112,42 @@ def SpawnTrees(maxSpawnTree, world):
 
 
 def budding(plante, world):
-    burned = []
-    possible_move = set()
+    possible_place_for_born = set()
     count_burn = random.randint(1, 4)
-    for i in [-1, 0, 1]:
-        for j in [-1, 0, 1]:
-            if i == j == 0:
+    for x in [-1, 0, 1]:
+        coorX = plante.x + x
+        if not world.width > coorX >= 0:
+            continue
+        for y in [-1, 0, 1]:
+            if x == y == 0:
                 continue
-            coorX = plante.x + i
-            coorY = plante.y + j
-            if (coorX, coorY) in world.free_place:
-                possible_move.add((coorX, coorY))
 
-    if possible_move:
-        num_real_born = min(len(possible_move), count_burn)
-        real_burn = random.sample(list(possible_move), num_real_born)
-        for i in real_burn:
-            burned.append(i)
-    return burned
+            coorY = plante.y + y
+            if not world.height > coorY >= 0:
+                continue
+            if (coorX, coorY) in world.all_free_pos:
+                possible_place_for_born.add((coorX, coorY))
+
+    if possible_place_for_born:
+        max_seed = min(len(possible_place_for_born), count_burn)
+        return random.sample(list(possible_place_for_born), max_seed)
+    return []
 
 
-def viev_animal(animal_one):
+def viev_animal(animal_one, world):
     viev_an = []
     radius = animal_one.hungry
     for dx in range(-radius, radius + 1):
+        numX = animal_one.x + dx
+        if not world.width > numX >= 0:
+            continue
         for dy in range(-radius, radius + 1):
             if dx == dy == 0:
                 continue
-            numX = animal_one.x + dx
             numY = animal_one.y + dy
-            if sizeX > numX >= 0 and sizeY > numY >= 0:
-                viev_an.append((numX, numY))
+            if not world.height > numY >= 0:
+                continue
+            viev_an.append((numX, numY))
     return viev_an
 
 
@@ -142,9 +163,8 @@ def working():
 
 
 def run_simulator(day):
-    display_world = [[" " for _ in range(sizeX)] for _ in range(sizeY)]
     world = World(sizeX, sizeY)
-
+    display_world = [[" " for _ in range(world.width)] for _ in range(world.height)]
     # СТАРТОВОЕ ЖИВОТНОЕ
     first_animal = world.get_empty_place()
     world.occupy(first_animal, Animal(*first_animal))
@@ -162,101 +182,89 @@ def run_simulator(day):
         SpawnTrees(maxSpawnTree, world)
 
         # ЖИВОТНЫЕ
-        next_gen = []
-        lookup = {p.pos: p for p in tree}
-        for org in unit:
+        for org in world.registry.get(Animal, set()).copy():
             if org.hp < 1:
-                display_world[org.y][org.x] = " "
                 world.rewind(org.pos)
                 continue
-            viev_org = viev_animal(org)
 
-            action, aff_food = org.think(viev_org, display_world)
-            possible_move = {i for i in viev_org if i in world.all_place}
+            # Зрение
+            viev_org = viev_animal(org, world)
+            # действие
+            action, eat_or_move = org.think(viev_org, world)
+            possible_move = [i for i in viev_org if world.all_place[i] is None]
             if action == "ЕДА":
-                how_many_eat = min(len(aff_food), org.hungry)
-                really_eat = random.sample(aff_food, how_many_eat)
-                org.hp -= org.hungry - len(really_eat)
-                lookup = {p.pos: p for p in tree}
-                for i in really_eat:
-                    plante_obj = lookup.get(i)
-                    if plante_obj:
-                        tree.remove(plante_obj)
-                    world.rewind(i)
-                    display_world[i[1]][i[0]] = " "
-                    possible_move.add(i)
-                org.hp += len(really_eat)
-                count_child = min(len(possible_move), random.choice([0, 0, 1, 1, 1]))
+                # доступные кусты
+                available_plants = eat_or_move
+                # сколько может съесть (добавил жадность, чтобы можно было реально много жить)
+                max_can_eat = min(len(available_plants), org.hungry + 1)
+                # выбираем кусты
+                chosen_plants_coords = random.sample(eat_or_move, max_can_eat)
+                org.hp -= org.hungry - len(chosen_plants_coords)
 
-                gen = org.maximka
-                where_born = random.sample(list(possible_move), count_child)
+                # едим
+                for pos in chosen_plants_coords:
+                    world.rewind(pos)
+                    possible_move.append(pos)
+                count_child = min(len(possible_move), random.choice([0, 0, 1, 1, 1, 2]))
 
+                gen = org.max_hp_with_burn
+                where_born = random.sample(possible_move, count_child)
+
+                # Рождение
                 for possibl in where_born:
-                    el = Animal(*possibl, gen)
-                    next_gen.append(el)
-                    maxim = (
-                        el.max_hp_with_burn if el.max_hp_with_burn > maxim else maxim
-                    )
-                    world.occupy(possibl)
-                    possible_move.discard(possibl)
-                    display_world[possibl[1]][possibl[0]] = animal
+                    animals = Animal(*possibl, gen)
+                    world.occupy(possibl, animals)
+                    maxim = max(animals.max_hp_with_burn, maxim)
 
-            else:
+            elif action == "ДВИЖЕНИЕ":
                 if possible_move:
-                    # ОСВОБОЖДАЕМ СТАРОЕ МЕСТО
-                    display_world[org.y][org.x] = " "
+                    # ОСВОБОЖДАЕМ СТАРОЕ МЕСТО И ИЩЕМ НОВОЕ
+                    free = random.choice(possible_move)
                     world.rewind(org.pos)
-
+                    possible_move.append(org.pos)
                     # делаем шаг
-                    org.x, org.y = random.choice(list(possible_move))
-                    org.hp -= org.hungry
-                    if org.hp > 0:
-                        world.occupy(org.pos)
-                        display_world[org.y][org.x] = animal
-                    else:
-                        world.rewind((org.x, org.y))
 
-                    maxim = org.hp if org.hp > maxim else maxim
-            next_gen.append(org)
+                    org.x, org.y = free
+                    world.occupy(free, org)
+                    possible_move.remove(free)
+                    org.hp -= org.hungry
+                    maxim = max(org.hp, maxim)
 
         # РАСТЕНИЯ
-        tree_time = []
-        for pl in tree:
+        for pl in world.registry.get(Plante, set()).copy():
             if pl.hp <= 0:
-                display_world[pl.y][pl.x] = " "
                 world.rewind(pl.pos)
                 continue
             pl.repro_timer += 1
             if pl.repro_timer == pl.repro:
                 pl.repro -= 1
                 pl.repro_timer = 0
-                num_borned = budding(pl, world)
-                for i in num_borned:
-                    tree_time.append(Plante(*i))
-                    world.occupy(i)
-                    display_world[i[1]][i[0]] = plante
+                for pos in budding(pl, world):
+                    world.occupy(pos, Plante(*pos))
             pl.hp -= 1
-            tree_time.append(pl)
-        tree = {i for i in tree_time if i.hp > 0}
 
-        const = maxim if maxim > const else const
-        unit = [org for org in next_gen if org.hp > 0]
+        const = max(maxim, const)
 
         # СТИРАЕМ КОНСОЛЬ
         os.system("cls" if os.name == "nt" else "clear")
 
         # РИСУЕМ
-        print("-" * (sizeX + 2))
-        for row in display_world:
-            print("|" + "".join(row) + "|")
-        print("-" * (sizeX + 2))
+        print("-" * (world.width + 2))
+        for row in world:
+            if world.all_place[row] is not None:
+                display_world[row[1]][row[0]] = world.all_place[row].look
+            else:
+                display_world[row[1]][row[0]] = " "
+        for strs in display_world:
+            print("|" + "".join(strs) + "|")
+        print("-" * (world.width + 2))
 
         print(f"День {day}")
-        print(f"Популяция: {len(unit)}")
+        print(f"Популяция: {len(world.registry.get(Animal, set()))}")
         print(f"Максимальная продолжительность жизни сегодня {maxim}")
         print(f"Максимальная продолжительность жизни {const}")
         maxim = 0
-        if not unit:
+        if not world.registry.get(Animal, set()):
             if day < 20:
                 return day
             else:
