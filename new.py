@@ -3,14 +3,14 @@ import os
 import time
 
 # --- БАЗОВЫЕ ЗНАЧНИЕ ---
-sizeX, sizeY = (80, 40) or map(int, input("ВВедите размеры мира:").split())
+sizeX, sizeY = (60, 40) or map(int, input("Введите размеры мира:").split())
 free_place = " "
 plante = "*"
 animal = "8"
 maxSpawnTree = random.randint(1, 3)
 max_hp_animal = random.randint(3, 5)
 max_hp_plante = 10
-durating = 0.02
+durating = 0.008
 start_tree = int((sizeX * sizeY) * 0.1)
 
 
@@ -25,7 +25,12 @@ class World:
     def occupy(self, pos, obj):
 
         self.all_place[pos] = obj
-        self.all_free_pos.remove(pos)
+        ide = self.all_free_pos.index(pos)
+        self.all_free_pos[-1], self.all_free_pos[ide] = (
+            self.all_free_pos[ide],
+            self.all_free_pos[-1],
+        )
+        self.all_free_pos.pop()
 
         obj_type = type(obj)
 
@@ -73,7 +78,7 @@ class Animal(Entitiy):
     def __init__(self, x, y, gen=max_hp_animal):
         super().__init__(x, y, gen)
         self.hungry = 1
-        self.look = " "
+        self.look = "8"
         if self.hp >= max_hp_animal * 2:
             self.hungry += int((self.hp // max_hp_animal - 1) ** 1.42)
 
@@ -221,7 +226,7 @@ def run_simulator(day):
     maxim = 0
     const = 0
     while True:
-
+        time_now = time.time()
         # СПАВН ДЕРЕВЬЕВ
         SpawnTrees(maxSpawnTree, world)
 
@@ -268,6 +273,8 @@ def run_simulator(day):
 
         print(f"День {day}")
         print(f"Популяция: {len(world.registry.get(Animal, set()))}")
+        print(f"Деревья: {len(world.registry.get(Plante, set()))}")
+        print(time.time() - time_now)
         print(f"Максимальная продолжительность жизни сегодня {maxim}")
         print(f"Максимальная продолжительность жизни {const}")
         maxim = 0
@@ -280,7 +287,7 @@ def run_simulator(day):
                 else:
                     print("Они держались дойстойно!")
                 return day
-        time.sleep(durating)
+        # time.sleep(durating)
         day += 1
 
 
