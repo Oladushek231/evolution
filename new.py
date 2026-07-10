@@ -3,7 +3,7 @@ import os
 import time
 
 # --- БАЗОВЫЕ ЗНАЧНИЕ ---
-sizeX, sizeY = (60, 40) or map(int, input("Введите размеры мира:").split())
+sizeX, sizeY = (80, 30) or map(int, input("Введите размеры мира:").split())
 free_place = " "
 plante = "*"
 animal = "8"
@@ -21,16 +21,21 @@ class World:
         self.registry = {}
         self.all_place = {(nx, ny): None for ny in range(y) for nx in range(x)}
         self.all_free_pos = [pos for pos in self.all_place]
+        self.free_pos_index = {pos: num for num, pos in enumerate(self.all_free_pos)}
 
     def occupy(self, pos, obj):
 
-        self.all_place[pos] = obj
-        ide = self.all_free_pos.index(pos)
+        self.all_place[pos] = obj  # добавление существа в мир
+        ide = self.free_pos_index[pos]  # поиск индекса пустой клетки О(н)
+        self.free_pos_index[self.all_free_pos[-1]] = (
+            ide  # обновление словаря индексов, чтобы в след раз легко найти индекс и не запутать систему
+        )
         self.all_free_pos[-1], self.all_free_pos[ide] = (
             self.all_free_pos[ide],
             self.all_free_pos[-1],
-        )
-        self.all_free_pos.pop()
+        )  # обмен координат в списке, для дальнейшего удаления последнего без сдвига списка
+        self.all_free_pos.pop()  # удаление последнего элемента списка пустых клеток
+        self.free_pos_index.pop(pos)  # удаление координаты из списка пустых
 
         obj_type = type(obj)
 
@@ -48,6 +53,7 @@ class World:
 
             self.all_place[pos] = None
             self.all_free_pos.append(pos)
+            self.free_pos_index[pos] = len(self.all_free_pos) - 1
 
     def get_empty_place(self):
         if self.all_free_pos:
@@ -266,7 +272,7 @@ def run_simulator(day):
             if world.all_place[row] is not None:
                 display_world[row[1]][row[0]] = world.all_place[row].look
             else:
-                display_world[row[1]][row[0]] = " "
+                display_world[row[1]][row[0]] = "Ж"
         for strs in display_world:
             print("|" + "".join(strs) + "|")
         print("-" * (world.width + 2))
